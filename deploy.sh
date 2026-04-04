@@ -22,6 +22,9 @@ done
 echo "==> Rebuilding agent container..."
 bash container/build.sh
 
+echo "==> Security check..."
+bash scripts/security-check.sh
+
 echo "==> Restarting service..."
 systemctl --user restart nanoclaw
 

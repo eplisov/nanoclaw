@@ -53,10 +53,38 @@ Before creating a PR, adding a skill, or preparing any contribution, you MUST re
 Run commands directly—don't tell the user to run them.
 
 ```bash
-npm run dev          # Run with hot reload
-npm run build        # Compile TypeScript
-./container/build.sh # Rebuild agent container
+npm run build          # Compile TypeScript (tsc)
+npm run dev            # Run with hot reload (tsx)
+npm run typecheck      # Type-check without emitting (tsc --noEmit)
+npm run lint           # ESLint on src/
+npm run lint:fix       # ESLint autofix
+npm run format:check   # Prettier check
+npm run format         # Prettier write
+npm test               # vitest run (all tests)
+npx vitest run src/db.test.ts              # Single test file
+npx vitest run --testNamePattern "pattern"  # Filter by test name
+./container/build.sh   # Rebuild agent container image
 ```
+
+CI runs on PRs to `main` (`.github/workflows/ci.yml`): format check → typecheck → vitest.
+
+## Message Flow
+
+```
+Channel (Telegram/WhatsApp/...) → storeMessage() → SQLite
+  ↓
+Polling loop (2s) → getNewMessages() → trigger check
+  ↓
+GroupQueue (max 5 concurrent) → processGroupMessages()
+  ↓
+runContainerAgent() → spawn Docker/Apple Container
+  ↓
+container/agent-runner (Claude Agent SDK query()) → streamed output
+  ↓
+OUTPUT_START/END markers parsed → channel.sendMessage()
+```
+
+IPC between host and container is filesystem-based (`data/ipc/{group}/`). Container writes commands, host `ipc.ts` polls and executes.
 
 Service management:
 ```bash
