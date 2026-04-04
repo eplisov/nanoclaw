@@ -146,6 +146,14 @@ grep -q '.local/bin' ~/.zshrc 2>/dev/null || echo 'export PATH="$HOME/.local/bin
 
 Then re-verify with `onecli version`.
 
+**Harden OneCLI (critical on public servers).** Docker bypasses UFW/iptables — any port in docker-compose `ports:` is open to the internet regardless of firewall rules. Find the OneCLI docker-compose file (`~/.onecli/docker-compose.yml`) and:
+
+1. **Remove the `ports:` section from the `postgres` service** — it communicates with the app via internal Docker networking and does not need a host port.
+2. **Generate a real PostgreSQL password** in `~/.onecli/.env` (`POSTGRES_PASSWORD=<random>`). If the DB volume already exists with the old password, also run `ALTER USER` inside the container to update it.
+3. **On Linux: block OneCLI app ports from external access** via iptables DOCKER-USER chain — allow `172.17.0.0/16` and `127.0.0.1`, DROP everything else for ports 10254 and 10255. Persist with `iptables-persistent`. Skip on macOS.
+4. Recreate containers: `cd ~/.onecli && docker compose down && docker compose up -d`
+5. Run `bash scripts/security-check.sh` if it exists.
+
 Point the CLI at the local OneCLI instance (it defaults to the cloud service otherwise):
 ```bash
 onecli config set api-host http://127.0.0.1:10254
