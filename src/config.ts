@@ -10,6 +10,9 @@ const envConfig = readEnvFile([
   'ASSISTANT_HAS_OWN_NUMBER',
   'ONECLI_URL',
   'TZ',
+  'VOICE_LANGUAGE',
+  'VOICE_TTS_VOICE',
+  'VOICE_MAX_DURATION_SEC',
 ]);
 
 export const ASSISTANT_NAME =
@@ -95,3 +98,15 @@ function resolveConfigTimezone(): string {
   return 'UTC';
 }
 export const TIMEZONE = resolveConfigTimezone();
+
+// Voice message settings
+export const VOICE_LANGUAGE =
+  process.env.VOICE_LANGUAGE || envConfig.VOICE_LANGUAGE || 'ru';
+export const VOICE_TTS_VOICE =
+  process.env.VOICE_TTS_VOICE ||
+  envConfig.VOICE_TTS_VOICE ||
+  'ru-RU-DmitryNeural';
+export const VOICE_MAX_DURATION_SEC = parseInt(
+  process.env.VOICE_MAX_DURATION_SEC || '300',
+  10,
+);

@@ -63,6 +63,27 @@ server.tool(
 );
 
 server.tool(
+  'send_voice_message',
+  "Send a voice message to the user. Synthesizes the given text to speech and sends it as a Telegram voice note. Use when the user asks for a spoken/voice reply. Keep the text concise — very long texts may fail or sound unnatural.",
+  {
+    text: z.string().describe('The text to synthesize and send as voice'),
+  },
+  async (args) => {
+    const data = {
+      type: 'voice_message',
+      chatJid,
+      text: args.text,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: 'Voice message queued for synthesis and delivery.' }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools. Returns the task ID for future reference. To modify an existing task, use update_task instead.
 

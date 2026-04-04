@@ -696,6 +696,14 @@ async function main(): Promise<void> {
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
       return channel.sendMessage(jid, text);
     },
+    sendVoiceMessage: async (jid, audio, threadId) => {
+      const channel = findChannel(channels, jid);
+      if (!channel?.sendVoiceMessage) {
+        logger.warn({ jid }, 'Channel does not support voice messages');
+        return;
+      }
+      return channel.sendVoiceMessage(jid, audio, threadId);
+    },
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroups: async (force: boolean) => {
