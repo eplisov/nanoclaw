@@ -13,7 +13,11 @@ import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
-  sendVoiceMessage: (jid: string, audio: Buffer, threadId?: string) => Promise<void>;
+  sendVoiceMessage: (
+    jid: string,
+    audio: Buffer,
+    threadId?: string,
+  ) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -105,7 +109,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     const audio = await synthesizeVoice(data.text);
                     await deps.sendVoiceMessage(data.chatJid, audio);
                     logger.info(
-                      { chatJid: data.chatJid, sourceGroup, chars: data.text.length },
+                      {
+                        chatJid: data.chatJid,
+                        sourceGroup,
+                        chars: data.text.length,
+                      },
                       'IPC voice message sent',
                     );
                   } catch (err) {

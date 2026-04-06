@@ -1,4 +1,8 @@
-import { transcribeVoice, isVoiceDurationAllowed, checkVoiceConfig } from "../voice.js";
+import {
+  transcribeVoice,
+  isVoiceDurationAllowed,
+  checkVoiceConfig,
+} from '../voice.js';
 import https from 'https';
 import { Api, Bot } from 'grammy';
 
@@ -241,7 +245,10 @@ export class TelegramChannel implements Channel {
           const buffer = Buffer.from(await response.arrayBuffer());
           const transcription = await transcribeVoice(buffer);
           content = `[Voice message transcription] ${transcription}${caption}`;
-          logger.info({ chatJid, duration, chars: transcription.length }, 'Transcribed voice message');
+          logger.info(
+            { chatJid, duration, chars: transcription.length },
+            'Transcribed voice message',
+          );
         } catch (err) {
           logger.error({ err, chatJid }, 'Voice transcription failed');
           content = `[Voice message — transcription failed]${caption}`;
@@ -353,7 +360,10 @@ export class TelegramChannel implements Channel {
         new InputFile(audio, 'voice.mp3'),
         options,
       );
-      logger.info({ jid, bytes: audio.length, threadId }, 'Telegram voice sent');
+      logger.info(
+        { jid, bytes: audio.length, threadId },
+        'Telegram voice sent',
+      );
     } catch (err) {
       logger.error({ jid, err }, 'Failed to send Telegram voice message');
     }
