@@ -87,6 +87,61 @@ onecli config set api-host ${ONECLI_URL}
 grep -q 'ONECLI_URL' .env 2>/dev/null || echo 'ONECLI_URL=${ONECLI_URL}' >> .env
 ```
 
+### Harden OneCLI for public servers
+
+Docker bypasses UFW/iptables — any port in docker-compose `ports:` is open to the internet regardless of firewall rules. On public-facing servers this requires extra steps.
+
+> **Note:** OneCLI ≥ April 2026 (onecli/onecli#144) already ships a compose template without PostgreSQL port mapping and generates a random DB password at install time. Steps 1–2 below are verification checks — they only require action on older installations.
+
+Find the OneCLI docker-compose file:
+
+```bash
+find ~/.onecli /opt/onecli -name 'docker-compose.yml' 2>/dev/null | head -1
+```
+
+**1. Verify PostgreSQL is not exposed.** Check that the `postgres` service in docker-compose.yml has **no `ports:` section**. If it does (older install), remove it — Postgres communicates with the app via internal Docker networking only.
+
+**2. Verify PostgreSQL password is not default.** Check `~/.onecli/.env` for `POSTGRES_PASSWORD`. If it equals `onecli` or is missing:
+
+```bash
+PG_PASS=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
+echo "POSTGRES_PASSWORD=$PG_PASS" >> ~/.onecli/.env
+docker exec onecli-postgres-1 psql -U onecli -d onecli -c "ALTER USER onecli WITH PASSWORD '$PG_PASS';"
+```
+
+**3. Block OneCLI app ports from external access (Linux only — critical).** OneCLI app ports (10254, 10255) are still bound to `0.0.0.0` in the compose template. On a public server the dashboard and API are open to the entire internet. NanoClaw containers access OneCLI via the Docker bridge gateway (~172.17.0.1), so the ports must stay on `0.0.0.0` but be blocked from outside:
+
+```bash
+sudo iptables -I DOCKER-USER -p tcp --dport 10254 -s 172.17.0.0/16 -j RETURN
+sudo iptables -I DOCKER-USER -p tcp --dport 10254 -s 127.0.0.1 -j RETURN
+sudo iptables -A DOCKER-USER -p tcp --dport 10254 -j DROP
+sudo iptables -I DOCKER-USER -p tcp --dport 10255 -s 172.17.0.0/16 -j RETURN
+sudo iptables -I DOCKER-USER -p tcp --dport 10255 -s 127.0.0.1 -j RETURN
+sudo iptables -A DOCKER-USER -p tcp --dport 10255 -j DROP
+```
+
+Persist the rules:
+
+```bash
+sudo apt-get install -y iptables-persistent 2>/dev/null && sudo netfilter-persistent save
+```
+
+Skip this step on macOS — Docker Desktop for Mac does not expose ports to the network the same way.
+
+**4. Recreate containers** if any compose changes were made:
+
+```bash
+cd ~/.onecli && docker compose down && docker compose up -d
+```
+
+Wait for both containers to become healthy before proceeding.
+
+**5. Run security check** if the script exists:
+
+```bash
+[ -f scripts/security-check.sh ] && bash scripts/security-check.sh
+```
+
 ### Wait for gateway readiness
 
 The gateway may take a moment to start after installation. Poll for up to 15 seconds:
