@@ -495,7 +495,30 @@ export async function processTaskIpc(
       }
       break;
 
-    default:
-      logger.warn({ type: data.type }, 'Unknown IPC task type');
+    default: {
+      let handled = false;
+      if (data.type.startsWith('calendar_')) {
+        try {
+          const { handleCalendarIpc } = await import(
+            './calendar-handler.js'
+          );
+          handled = await handleCalendarIpc(
+            data,
+            sourceGroup,
+            isMain,
+            DATA_DIR,
+          );
+        } catch (err) {
+          logger.error(
+            { err, type: data.type },
+            'Calendar IPC handler error',
+          );
+        }
+      }
+      if (!handled) {
+        logger.warn({ type: data.type }, 'Unknown IPC task type');
+      }
+      break;
+    }
   }
 }
