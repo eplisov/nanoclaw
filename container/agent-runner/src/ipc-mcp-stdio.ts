@@ -524,6 +524,211 @@ Use available_groups.json to find the JID for a group. The folder name must be c
   },
 );
 
+// ---------------------------------------------------------------------------
+// Google Calendar tools (request/response via IPC)
+// ---------------------------------------------------------------------------
+
+const CALENDAR_RESULTS_DIR = path.join(IPC_DIR, 'calendar_results');
+
+function waitForCalendarResult(requestId: string, timeoutMs = 30000): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  return new Promise((resolve, reject) => {
+    const resultPath = path.join(CALENDAR_RESULTS_DIR, `${requestId}.json`);
+    const start = Date.now();
+    const poll = () => {
+      if (fs.existsSync(resultPath)) {
+        try {
+          const content = fs.readFileSync(resultPath, 'utf-8');
+          fs.unlinkSync(resultPath);
+          resolve(JSON.parse(content));
+        } catch (err) {
+          reject(err);
+        }
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error('Calendar request timed out'));
+        return;
+      }
+      setTimeout(poll, 200);
+    };
+    poll();
+  });
+}
+
+function calendarRequestId(): string {
+  return `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+if (isMain) {
+  server.tool(
+    'calendar_list_events',
+    `List upcoming events from your Google Calendar. Returns events sorted by start time.
+Use this when the user asks about their schedule, upcoming meetings, or what's happening on a specific day/week.`,
+    {
+      time_min: z.string().optional().describe('Start of time range (ISO 8601 datetime, e.g. "2026-04-06T00:00:00+03:00"). Defaults to now.'),
+      time_max: z.string().optional().describe('End of time range (ISO 8601 datetime). If omitted, returns next N events.'),
+      max_results: z.number().optional().describe('Maximum number of events to return (default 10, max 50)'),
+      query: z.string().optional().describe('Free-text search filter (matches summary, description, location)'),
+    },
+    async (args) => {
+      const requestId = calendarRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'calendar_list_events',
+        requestId,
+        time_min: args.time_min,
+        time_max: args.time_max,
+        max_results: args.max_results,
+        query: args.query,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForCalendarResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'calendar_get_event',
+    'Get full details of a specific calendar event by its ID.',
+    {
+      event_id: z.string().describe('The event ID (from calendar_list_events results)'),
+    },
+    async (args) => {
+      const requestId = calendarRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'calendar_get_event',
+        requestId,
+        event_id: args.event_id,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForCalendarResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'calendar_create_event',
+    `Create a new event on Google Calendar. Always confirm event details with the user before creating.
+For timed events use ISO 8601 datetime (e.g. "2026-04-07T14:00:00+03:00"). For all-day events use date only ("2026-04-07").`,
+    {
+      summary: z.string().describe('Event title'),
+      start: z.string().describe('Start time (ISO 8601 datetime) or date (YYYY-MM-DD for all-day)'),
+      end: z.string().describe('End time (ISO 8601 datetime) or date (YYYY-MM-DD for all-day)'),
+      description: z.string().optional().describe('Event description'),
+      location: z.string().optional().describe('Event location'),
+      attendees: z.string().optional().describe('Comma-separated email addresses of attendees'),
+    },
+    async (args) => {
+      const requestId = calendarRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'calendar_create_event',
+        requestId,
+        summary: args.summary,
+        start: args.start,
+        end: args.end,
+        description: args.description,
+        location: args.location,
+        attendees: args.attendees,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForCalendarResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'calendar_update_event',
+    'Update an existing calendar event. Only provided fields are changed.',
+    {
+      event_id: z.string().describe('The event ID to update'),
+      summary: z.string().optional().describe('New event title'),
+      start: z.string().optional().describe('New start time (ISO 8601) or date (YYYY-MM-DD)'),
+      end: z.string().optional().describe('New end time (ISO 8601) or date (YYYY-MM-DD)'),
+      description: z.string().optional().describe('New description'),
+      location: z.string().optional().describe('New location'),
+    },
+    async (args) => {
+      const requestId = calendarRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'calendar_update_event',
+        requestId,
+        event_id: args.event_id,
+        summary: args.summary,
+        start: args.start,
+        end: args.end,
+        description: args.description,
+        location: args.location,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForCalendarResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'calendar_delete_event',
+    'Delete an event from Google Calendar. Confirm with the user before deleting.',
+    {
+      event_id: z.string().describe('The event ID to delete'),
+    },
+    async (args) => {
+      const requestId = calendarRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'calendar_delete_event',
+        requestId,
+        event_id: args.event_id,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForCalendarResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'calendar_free_busy',
+    'Check free/busy status for a time range. Use when the user asks about availability or free slots.',
+    {
+      time_min: z.string().describe('Start of time range (ISO 8601 datetime)'),
+      time_max: z.string().describe('End of time range (ISO 8601 datetime)'),
+    },
+    async (args) => {
+      const requestId = calendarRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'calendar_free_busy',
+        requestId,
+        time_min: args.time_min,
+        time_max: args.time_max,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForCalendarResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+}
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);
