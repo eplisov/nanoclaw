@@ -146,12 +146,12 @@ grep -q '.local/bin' ~/.zshrc 2>/dev/null || echo 'export PATH="$HOME/.local/bin
 
 Then re-verify with `onecli version`.
 
-**Harden OneCLI (critical on public servers).** Docker bypasses UFW/iptables — any port in docker-compose `ports:` is open to the internet regardless of firewall rules. Find the OneCLI docker-compose file (`~/.onecli/docker-compose.yml`) and:
+**Harden OneCLI (critical on public servers).** Docker bypasses UFW/iptables — any port in docker-compose `ports:` is open to the internet regardless of firewall rules. OneCLI ≥ April 2026 (onecli/onecli#144) fixed PostgreSQL exposure and default passwords, but the app ports (10254/10255) are still bound to `0.0.0.0`. Find the OneCLI docker-compose file (`~/.onecli/docker-compose.yml`) and:
 
-1. **Remove the `ports:` section from the `postgres` service** — it communicates with the app via internal Docker networking and does not need a host port.
-2. **Generate a real PostgreSQL password** in `~/.onecli/.env` (`POSTGRES_PASSWORD=<random>`). If the DB volume already exists with the old password, also run `ALTER USER` inside the container to update it.
-3. **On Linux: block OneCLI app ports from external access** via iptables DOCKER-USER chain — allow `172.17.0.0/16` and `127.0.0.1`, DROP everything else for ports 10254 and 10255. Persist with `iptables-persistent`. Skip on macOS.
-4. Recreate containers: `cd ~/.onecli && docker compose down && docker compose up -d`
+1. **Verify** the `postgres` service has no `ports:` section (fixed in OneCLI #144; older installs may still have it — remove if present).
+2. **Verify** `~/.onecli/.env` has a non-default `POSTGRES_PASSWORD` (OneCLI now generates one at install; if it equals `onecli` or is missing, generate a random one and `ALTER USER` inside the container).
+3. **On Linux: block OneCLI app ports from external access** via iptables DOCKER-USER chain — allow `172.17.0.0/16` and `127.0.0.1`, DROP everything else for ports 10254 and 10255. Persist with `iptables-persistent`. Skip on macOS. **This is NOT fixed by OneCLI and remains critical.**
+4. Recreate containers if any compose changes were made: `cd ~/.onecli && docker compose down && docker compose up -d`
 5. Run `bash scripts/security-check.sh` if it exists.
 
 Point the CLI at the local OneCLI instance (it defaults to the cloud service otherwise):
