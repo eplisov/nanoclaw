@@ -177,7 +177,14 @@ function buildVolumeMounts(
       process.env.GIT_USER_EMAIL || 'eplisov@users.noreply.github.com';
     fs.writeFileSync(
       gitconfigFile,
-      ['[user]', `    name = ${gitUserName}`, `    email = ${gitUserEmail}`, ''].join('\n'),
+      [
+        '[user]',
+        `    name = ${gitUserName}`,
+        `    email = ${gitUserEmail}`,
+        '[url "https://github.com/"]',
+        '    insteadOf = git@github.com:',
+        '',
+      ].join('\n'),
     );
   }
 
