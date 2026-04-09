@@ -39,3 +39,6 @@ agents-sdk-docs
 
 # useful
 GUIDE.md
+
+#personal
+.claude/settings.local.json

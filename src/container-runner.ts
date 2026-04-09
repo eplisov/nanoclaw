@@ -167,6 +167,20 @@ function buildVolumeMounts(
     );
   }
 
+  // Write .gitconfig for git operations inside containers
+  // Entrypoint copies this to /home/node/.gitconfig on startup
+  const gitconfigFile = path.join(groupSessionsDir, '.gitconfig');
+  if (!fs.existsSync(gitconfigFile)) {
+    const gitUserName =
+      process.env.GIT_USER_NAME || 'Evgeny Plisov';
+    const gitUserEmail =
+      process.env.GIT_USER_EMAIL || 'eplisov@users.noreply.github.com';
+    fs.writeFileSync(
+      gitconfigFile,
+      ['[user]', `    name = ${gitUserName}`, `    email = ${gitUserEmail}`, ''].join('\n'),
+    );
+  }
+
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
