@@ -2,7 +2,7 @@
  * Container Runner for NanoClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -170,22 +170,36 @@ function buildVolumeMounts(
   // Write .gitconfig for git operations inside containers
   // Entrypoint copies this to /home/node/.gitconfig on startup
   const gitconfigFile = path.join(groupSessionsDir, '.gitconfig');
-  if (!fs.existsSync(gitconfigFile)) {
-    const gitUserName =
-      process.env.GIT_USER_NAME || 'Evgeny Plisov';
-    const gitUserEmail =
-      process.env.GIT_USER_EMAIL || 'eplisov@users.noreply.github.com';
-    fs.writeFileSync(
-      gitconfigFile,
-      [
-        '[user]',
-        `    name = ${gitUserName}`,
-        `    email = ${gitUserEmail}`,
-        '[url "https://github.com/"]',
-        '    insteadOf = git@github.com:',
-        '',
-      ].join('\n'),
-    );
+  const gitUserName = process.env.GIT_USER_NAME || 'Evgeny Plisov';
+  const gitUserEmail =
+    process.env.GIT_USER_EMAIL || 'eplisov@users.noreply.github.com';
+  fs.writeFileSync(
+    gitconfigFile,
+    [
+      '[user]',
+      `    name = ${gitUserName}`,
+      `    email = ${gitUserEmail}`,
+      '[url "https://github.com/"]',
+      '    insteadOf = git@github.com:',
+      '[credential "https://github.com"]',
+      '    helper = store --file /home/node/.claude/.git-credentials',
+      '',
+    ].join('\n'),
+  );
+
+  // Write git credentials from host's gh CLI token
+  const gitCredentialsFile = path.join(groupSessionsDir, '.git-credentials');
+  try {
+    const ghToken = execSync('gh auth token', { encoding: 'utf-8' }).trim();
+    if (ghToken) {
+      fs.writeFileSync(
+        gitCredentialsFile,
+        `https://x-access-token:${ghToken}@github.com\n`,
+        { mode: 0o600 },
+      );
+    }
+  } catch {
+    logger.debug('gh auth token not available — git credentials not written');
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
@@ -282,6 +296,11 @@ async function buildContainerArgs(
   });
   if (onecliApplied) {
     logger.info({ containerName }, 'OneCLI gateway config applied');
+    // Bypass proxy for GitHub — OneCLI tunnels but doesn't inject
+    // credentials for github.com, and the tunnel breaks git's SSL.
+    // Git credentials are handled via credential store instead.
+    args.push('-e', 'NO_PROXY=github.com,*.github.com');
+    args.push('-e', 'no_proxy=github.com,*.github.com');
   } else {
     logger.warn(
       { containerName },
