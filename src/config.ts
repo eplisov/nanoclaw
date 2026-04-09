@@ -13,7 +13,13 @@ const envConfig = readEnvFile([
   'VOICE_LANGUAGE',
   'VOICE_TTS_VOICE',
   'VOICE_MAX_DURATION_SEC',
+  'GITHUB_TOKEN',
 ]);
+
+// Promote .env values to process.env so container-runner can read them
+if (envConfig.GITHUB_TOKEN && !process.env.GITHUB_TOKEN) {
+  process.env.GITHUB_TOKEN = envConfig.GITHUB_TOKEN;
+}
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';

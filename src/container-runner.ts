@@ -2,7 +2,7 @@
  * Container Runner for NanoClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, execSync, spawn } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -181,26 +181,9 @@ function buildVolumeMounts(
       `    email = ${gitUserEmail}`,
       '[url "https://github.com/"]',
       '    insteadOf = git@github.com:',
-      '[credential "https://github.com"]',
-      '    helper = store --file /home/node/.claude/.git-credentials',
       '',
     ].join('\n'),
   );
-
-  // Write git credentials from host's gh CLI token
-  const gitCredentialsFile = path.join(groupSessionsDir, '.git-credentials');
-  try {
-    const ghToken = execSync('gh auth token', { encoding: 'utf-8' }).trim();
-    if (ghToken) {
-      fs.writeFileSync(
-        gitCredentialsFile,
-        `https://x-access-token:${ghToken}@github.com\n`,
-        { mode: 0o600 },
-      );
-    }
-  } catch {
-    logger.debug('gh auth token not available — git credentials not written');
-  }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
@@ -298,7 +281,7 @@ async function buildContainerArgs(
     logger.info({ containerName }, 'OneCLI gateway config applied');
     // Bypass proxy for GitHub — OneCLI tunnels but doesn't inject
     // credentials for github.com, and the tunnel breaks git's SSL.
-    // Git credentials are handled via credential store instead.
+    // GitHub auth is handled via GITHUB_TOKEN env var instead.
     args.push('-e', 'NO_PROXY=github.com,*.github.com');
     args.push('-e', 'no_proxy=github.com,*.github.com');
   } else {
@@ -310,6 +293,12 @@ async function buildContainerArgs(
 
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
+
+  // Pass GitHub token for gh CLI and git credential helper
+  const ghToken = process.env.GITHUB_TOKEN;
+  if (ghToken) {
+    args.push('-e', `GITHUB_TOKEN=${ghToken}`);
+  }
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
