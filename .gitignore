@@ -35,10 +35,9 @@ groups/global/*
 # Skills system (local per-installation state)
 .nanoclaw/
 
+# Local docs & guides
 agents-sdk-docs
-
-# useful
 GUIDE.md
 
-#personal
+# Personal settings
 .claude/settings.local.json
