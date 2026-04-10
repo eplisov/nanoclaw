@@ -52,12 +52,21 @@ function initCalendarClient(dataDir: string): calendar_v3.Calendar | null {
   );
   oauth2Client.setCredentials(tokens);
 
-  // Auto-persist refreshed tokens
+  // Auto-persist refreshed tokens. Atomic write (tmp + rename) so that a
+  // crash mid-write cannot leave the token file half-written — losing the
+  // refresh_token would force a full re-auth.
   oauth2Client.on('tokens', (newTokens) => {
-    const existing = JSON.parse(fs.readFileSync(tokenPath, 'utf-8'));
-    const merged = { ...existing, ...newTokens };
-    fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
-    logger.info('Google Calendar tokens refreshed and saved');
+    try {
+      const existing = JSON.parse(fs.readFileSync(tokenPath, 'utf-8'));
+      const merged = { ...existing, ...newTokens };
+      const tempPath = `${tokenPath}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(merged, null, 2));
+      fs.chmodSync(tempPath, 0o600);
+      fs.renameSync(tempPath, tokenPath);
+      logger.info('Google OAuth tokens refreshed and saved');
+    } catch (err) {
+      logger.error({ err }, 'Failed to persist refreshed Google OAuth tokens');
+    }
   });
 
   cachedAuth = oauth2Client;
@@ -398,10 +407,13 @@ export async function handleTasksIpc(
       }
 
       case 'tasks_list_tasks': {
+        // showHidden is distinct from showCompleted — it exposes
+        // deleted/trashed tasks, which the agent almost never wants. Keep
+        // it off regardless of show_completed.
         const res = await tasks.tasks.list({
           tasklist: listId,
           showCompleted: (data.show_completed as boolean) ?? false,
-          showHidden: (data.show_completed as boolean) ?? false,
+          showHidden: false,
           dueMin: (data.due_min as string) || undefined,
           dueMax: (data.due_max as string) || undefined,
           maxResults: (data.max_results as number) || 100,

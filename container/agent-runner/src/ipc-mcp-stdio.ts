@@ -881,7 +881,7 @@ Confirm the title and any details with the user before creating. Use Calendar in
       title: z.string().optional().describe('New title.'),
       notes: z.string().optional().describe('New notes.'),
       due: z.string().optional().describe('New due date (RFC3339; time-of-day ignored).'),
-      status: z.string().optional().describe('Status: "needsAction" or "completed".'),
+      status: z.enum(['needsAction', 'completed']).optional().describe('Task status. Prefer tasks_complete_task for marking done; use this only to re-open a completed task.'),
     },
     async (args) => {
       const requestId = tasksRequestId();
