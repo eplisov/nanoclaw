@@ -507,9 +507,7 @@ export async function processTaskIpc(
       let handled = false;
       if (data.type.startsWith('calendar_')) {
         try {
-          const { handleCalendarIpc } = await import(
-            './calendar-handler.js'
-          );
+          const { handleCalendarIpc } = await import('./calendar-handler.js');
           handled = await handleCalendarIpc(
             data,
             sourceGroup,
@@ -517,10 +515,15 @@ export async function processTaskIpc(
             DATA_DIR,
           );
         } catch (err) {
-          logger.error(
-            { err, type: data.type },
-            'Calendar IPC handler error',
-          );
+          logger.error({ err, type: data.type }, 'Calendar IPC handler error');
+        }
+      }
+      if (!handled && data.type.startsWith('tasks_')) {
+        try {
+          const { handleTasksIpc } = await import('./calendar-handler.js');
+          handled = await handleTasksIpc(data, sourceGroup, isMain, DATA_DIR);
+        } catch (err) {
+          logger.error({ err, type: data.type }, 'Tasks IPC handler error');
         }
       }
       if (!handled) {

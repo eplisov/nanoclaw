@@ -32,7 +32,10 @@ const TOKEN_PATH = path.join(
 );
 const PORT = 3000;
 const REDIRECT_URI = `http://localhost:${PORT}/callback`;
-const SCOPES = ['https://www.googleapis.com/auth/calendar'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/tasks',
+];
 
 async function main() {
   if (!fs.existsSync(CREDENTIALS_PATH)) {

@@ -529,6 +529,7 @@ Use available_groups.json to find the JID for a group. The folder name must be c
 // ---------------------------------------------------------------------------
 
 const CALENDAR_RESULTS_DIR = path.join(IPC_DIR, 'calendar_results');
+const TASKS_RESULTS_DIR = path.join(IPC_DIR, 'tasks_results');
 
 function waitForCalendarResult(requestId: string, timeoutMs = 30000): Promise<{ success: boolean; data?: unknown; error?: string }> {
   return new Promise((resolve, reject) => {
@@ -557,6 +558,35 @@ function waitForCalendarResult(requestId: string, timeoutMs = 30000): Promise<{ 
 
 function calendarRequestId(): string {
   return `cal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function waitForTasksResult(requestId: string, timeoutMs = 30000): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  return new Promise((resolve, reject) => {
+    const resultPath = path.join(TASKS_RESULTS_DIR, `${requestId}.json`);
+    const start = Date.now();
+    const poll = () => {
+      if (fs.existsSync(resultPath)) {
+        try {
+          const content = fs.readFileSync(resultPath, 'utf-8');
+          fs.unlinkSync(resultPath);
+          resolve(JSON.parse(content));
+        } catch (err) {
+          reject(err);
+        }
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error('Tasks request timed out'));
+        return;
+      }
+      setTimeout(poll, 200);
+    };
+    poll();
+  });
+}
+
+function tasksRequestId(): string {
+  return `tsk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 if (isMain) {
@@ -724,6 +754,203 @@ For timed events use ISO 8601 datetime (e.g. "2026-04-07T14:00:00+03:00"). For a
         return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
       } catch (err) {
         return { content: [{ type: 'text' as const, text: `Calendar error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Google Tasks tools (request/response via IPC)
+  // -------------------------------------------------------------------------
+
+  server.tool(
+    'tasks_list_lists',
+    `List all of the user's Google Tasks task lists (e.g. "My Tasks", "Shopping").
+Use this when the user mentions multiple lists or asks which lists exist. The returned id can be passed as list_id to other tasks_* tools.`,
+    {},
+    async () => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_list_lists',
+        requestId,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'tasks_list_tasks',
+    `List tasks from a Google Tasks list. By default returns only open (non-completed) tasks from the user's default list.
+Use this when the user asks "what's on my todo list", "what do I need to do", or wants to review their pending tasks.`,
+    {
+      list_id: z.string().optional().describe('Task list id from tasks_list_lists. Defaults to "@default" (the user\'s primary list).'),
+      show_completed: z.boolean().optional().describe('Include completed tasks (default false).'),
+      due_min: z.string().optional().describe('Lower bound for due date (RFC3339 timestamp). Filter tasks due on or after this date.'),
+      due_max: z.string().optional().describe('Upper bound for due date (RFC3339 timestamp).'),
+      max_results: z.number().optional().describe('Max items to return (default 100).'),
+    },
+    async (args) => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_list_tasks',
+        requestId,
+        list_id: args.list_id,
+        show_completed: args.show_completed,
+        due_min: args.due_min,
+        due_max: args.due_max,
+        max_results: args.max_results,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'tasks_get_task',
+    'Get full details of a single Google Task by its id.',
+    {
+      task_id: z.string().describe('The task id (from tasks_list_tasks results).'),
+      list_id: z.string().optional().describe('Task list id. Defaults to "@default".'),
+    },
+    async (args) => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_get_task',
+        requestId,
+        task_id: args.task_id,
+        list_id: args.list_id,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'tasks_create_task',
+    `Create a new task in Google Tasks. Use when the user says "remind me to ...", "add a task ...", "put X on my todo list", or similar.
+Confirm the title and any details with the user before creating. Use Calendar instead for time-bound events (meetings, appointments).`,
+    {
+      title: z.string().describe('Task title (short, action-oriented).'),
+      notes: z.string().optional().describe('Longer description / notes for the task.'),
+      due: z.string().optional().describe('Due date as RFC3339 timestamp (e.g. "2026-04-15T00:00:00.000Z"). NOTE: Google Tasks ignores time-of-day — only the date portion is stored.'),
+      list_id: z.string().optional().describe('Target task list id. Defaults to "@default".'),
+      parent: z.string().optional().describe('Parent task id, to create a subtask.'),
+    },
+    async (args) => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_create_task',
+        requestId,
+        title: args.title,
+        notes: args.notes,
+        due: args.due,
+        list_id: args.list_id,
+        parent: args.parent,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'tasks_update_task',
+    'Update fields of an existing Google Task. Only provided fields are changed. Confirm changes with the user before applying.',
+    {
+      task_id: z.string().describe('The task id to update.'),
+      list_id: z.string().optional().describe('Task list id. Defaults to "@default".'),
+      title: z.string().optional().describe('New title.'),
+      notes: z.string().optional().describe('New notes.'),
+      due: z.string().optional().describe('New due date (RFC3339; time-of-day ignored).'),
+      status: z.string().optional().describe('Status: "needsAction" or "completed".'),
+    },
+    async (args) => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_update_task',
+        requestId,
+        task_id: args.task_id,
+        list_id: args.list_id,
+        title: args.title,
+        notes: args.notes,
+        due: args.due,
+        status: args.status,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'tasks_complete_task',
+    'Mark a Google Task as completed. Use when the user says "I did X", "mark X as done", "tick off X".',
+    {
+      task_id: z.string().describe('The task id to mark completed.'),
+      list_id: z.string().optional().describe('Task list id. Defaults to "@default".'),
+    },
+    async (args) => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_complete_task',
+        requestId,
+        task_id: args.task_id,
+        list_id: args.list_id,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  server.tool(
+    'tasks_delete_task',
+    'Delete a Google Task. Confirm with the user before deleting — this is irreversible.',
+    {
+      task_id: z.string().describe('The task id to delete.'),
+      list_id: z.string().optional().describe('Task list id. Defaults to "@default".'),
+    },
+    async (args) => {
+      const requestId = tasksRequestId();
+      writeIpcFile(TASKS_DIR, {
+        type: 'tasks_delete_task',
+        requestId,
+        task_id: args.task_id,
+        list_id: args.list_id,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const result = await waitForTasksResult(requestId);
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result.data ?? { error: result.error }, null, 2) }], isError: !result.success };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Tasks error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     },
   );
