@@ -282,6 +282,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
+  // Snapshot of lastAgentTimestamp at the moment of the most recent reply we
+  // actually sent. Used to roll back only as far as the last responded message
+  // if the agent crashes after additional messages were piped in.
+  let cursorAtLastOutput = previousCursor;
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
@@ -294,8 +298,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
       if (text) {
+        // Snapshot cursor BEFORE awaiting send — any message piped in *during*
+        // the await is a separate request that still needs its own response.
+        const cursorAtThisOutput = lastAgentTimestamp[chatJid] || previousCursor;
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
+        cursorAtLastOutput = cursorAtThisOutput;
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
@@ -314,12 +322,29 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (idleTimer) clearTimeout(idleTimer);
 
   if (output === 'error' || hadError) {
-    // If we already sent output to the user, don't roll back the cursor —
-    // the user got their response and re-processing would send duplicates.
     if (outputSentToUser) {
+      // Roll back cursor to the snapshot taken at the most recent reply we
+      // actually sent. Anything piped in *after* that point never got a
+      // response and must be picked up by recovery on the next attempt.
+      // Without this, an idle-timeout SIGKILL after a partial conversation
+      // silently drops every late-piped message.
+      const currentCursor = lastAgentTimestamp[chatJid] || '';
+      if (cursorAtLastOutput !== currentCursor) {
+        lastAgentTimestamp[chatJid] = cursorAtLastOutput;
+        saveState();
+        logger.warn(
+          {
+            group: group.name,
+            rolledBackFrom: currentCursor,
+            rolledBackTo: cursorAtLastOutput,
+          },
+          'Agent error after partial output, rolled back cursor to last responded message',
+        );
+        return false;
+      }
       logger.warn(
         { group: group.name },
-        'Agent error after output was sent, skipping cursor rollback to prevent duplicates',
+        'Agent error after output was sent, no piped messages to recover',
       );
       return true;
     }
