@@ -61,6 +61,7 @@ import {
   loadSenderAllowlist,
   shouldDropMessage,
 } from './sender-allowlist.js';
+import { startDailySessionReset } from './daily-session-reset.js';
 import { startSessionCleanup } from './session-cleanup.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
@@ -781,6 +782,13 @@ async function main(): Promise<void> {
     },
   });
   startSessionCleanup();
+  startDailySessionReset(
+    () => sessions,
+    (groupFolder) => {
+      delete sessions[groupFolder];
+      deleteSession(groupFolder);
+    },
+  );
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop().catch((err) => {
