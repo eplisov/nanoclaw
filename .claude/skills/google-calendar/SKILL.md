@@ -21,14 +21,22 @@ Adds Google Calendar and Google Tasks as tools for the NanoClaw agent. The agent
    - Name: "NanoClaw Calendar"
 6. Download the JSON file
 
-### 2. Upload Credentials to VPS
+### 2. Publish the OAuth App
+
+In the Cloud Console, go to **APIs & Services > OAuth consent screen** and set **Publishing status** to **In production** (click **Publish app**).
+
+If you leave it in **Testing**, Google issues a `refresh_token` that expires after **7 days**, and every API call after that returns `invalid_grant`. Publishing removes this limit.
+
+The Calendar and Tasks scopes are marked "sensitive", so Google may prompt for verification — you can skip it for personal use. The consent screen will show "Google hasn't verified this app" (click Advanced → Continue), but the refresh_token will no longer expire.
+
+### 3. Upload Credentials to VPS
 
 ```bash
 # Copy the downloaded JSON to the VPS
 scp ~/Downloads/client_secret_*.json nanoclaw:~/nanoclaw/data/google-calendar-credentials.json
 ```
 
-### 3. Run OAuth Setup
+### 4. Run OAuth Setup
 
 On your **local machine**, set up SSH port-forward:
 
@@ -52,7 +60,7 @@ The script will print a URL. Open it in your local browser, grant access. The pa
 > ```
 > Google will show the consent screen with both Calendar and Tasks permissions.
 
-### 4. Build & Deploy
+### 5. Build & Deploy
 
 ```bash
 cd ~/nanoclaw
@@ -63,7 +71,7 @@ bash container/build.sh                    # Rebuild container image
 systemctl --user restart nanoclaw          # Restart service
 ```
 
-### 5. Update Agent Instructions
+### 6. Update Agent Instructions
 
 Add to your main group's `CLAUDE.md` (e.g. `groups/main/CLAUDE.md`):
 
@@ -133,7 +141,7 @@ Available tools:
 
 **"Calendar request timed out" / "Tasks request timed out"**: Host handler didn't respond within 30s. Check `logs/nanoclaw.log` for errors.
 
-**Token expired / invalid_grant**: Delete `data/google-calendar-token.json` and re-run setup-oauth.
+**Token expired / invalid_grant**: Delete `data/google-calendar-token.json` and re-run setup-oauth. If the error returns ~7 days after setup, your OAuth app is still in **Testing** mode — Google issues a `refresh_token` that expires in 7 days and the file will contain `refresh_token_expires_in`. Publish the app (see Setup step 2), then re-run setup-oauth. A healthy token file does **not** contain `refresh_token_expires_in`.
 
 **"Google Tasks API has not been used in project ..." / 403 PERMISSION_DENIED**: Tasks API isn't enabled in your GCP project. Enable it at APIs & Services > Library > Google Tasks API > Enable.
 

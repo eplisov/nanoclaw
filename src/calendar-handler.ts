@@ -315,15 +315,25 @@ export async function handleCalendarIpc(
         });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const raw = err instanceof Error ? err.message : String(err);
     logger.error({ err, type, requestId }, 'Google Calendar API error');
     writeResult(dataDir, sourceGroup, requestId, {
       success: false,
-      error: message,
+      error: humanizeGoogleAuthError(raw),
     });
   }
 
   return true;
+}
+
+// Google's OAuth library surfaces "invalid_grant" as the bare error message,
+// which is opaque to the user. Rewrite it into an actionable hint so the agent
+// can tell the user exactly what to do instead of parroting the raw string.
+function humanizeGoogleAuthError(message: string): string {
+  if (message === 'invalid_grant') {
+    return 'Google OAuth refresh_token отозван или истёк. Нужно заново запустить setup-oauth на VPS (см. google-calendar/SKILL.md).';
+  }
+  return message;
 }
 
 function shapeTask(t: tasks_v1.Schema$Task) {
@@ -527,13 +537,13 @@ export async function handleTasksIpc(
         );
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const raw = err instanceof Error ? err.message : String(err);
     logger.error({ err, type, requestId }, 'Google Tasks API error');
     writeResult(
       dataDir,
       sourceGroup,
       requestId,
-      { success: false, error: message },
+      { success: false, error: humanizeGoogleAuthError(raw) },
       'tasks_results',
     );
   }
